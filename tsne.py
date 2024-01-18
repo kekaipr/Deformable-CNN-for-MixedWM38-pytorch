@@ -51,26 +51,31 @@ from sklearn import manifold, datasets
 #         if val == value:
 #             return key
 
-defect_list = ['none', 'center', 'donut', 'edge_LOC', 'edge_ring', 'LOC', 'nearfull', 'scratch', 'random']
+defect_list = ['Normal', 'Center', 'Donut', 'Edge-loc', 'Edge-ring', 'Loc', 'Near-full', 'Scratch', 'Random']
 
 plt.figure(figsize=(15, 15))
 plt.rcParams["font.family"] = "Times New Roman"
 
 for i, defect in enumerate(defect_list, 1):
-    path38 = os.path.join(os.getcwd(), f'datasets/for_CAE/for_CAE_38_{defect}.npz')
-    path811 = os.path.join(os.getcwd(), f'datasets/for_CAE/for_CAE_811_{defect}.npz')
-    mix38 = np.load(path38)
-    wm811 = np.load(path811)
+    path38 = os.path.join(os.getcwd(), f'C:/Users/MA201-Ultima/Desktop/thesis/0108data(DA)/source_domain_train.npz')
+    path811 = os.path.join(os.getcwd(), f'C:/Users/MA201-Ultima/Desktop/thesis/0108data(DA)/targets_domain_train.npz')
+    mix38 = np.load(path38, allow_pickle= True)
+    wm811k = np.load(path811, allow_pickle= True)
 
-    sample_num = mix38['arr_0'].shape[0] + wm811['arr_0'].shape[0]
-    sample = np.concatenate((mix38['arr_0'], wm811['arr_0']), axis=0)
+    wm811k_= wm811k["arr_0"]
+    wm811= np.zeros(shape= (len(wm811k_), 52, 52))
+    for index in range(0, len(wm811)):
+        wm811[index]= wm811k_[index].reshape(1, 52, 52)
 
-    label_38, label_811 = label = np.zeros((mix38['arr_0'].shape[0]), dtype=np.uint8), np.ones((wm811['arr_0'].shape[0]), dtype=np.uint8)
+    sample_num = mix38['arr_0'].shape[0] + wm811.shape[0]
+    sample = np.concatenate((mix38['arr_0'], wm811), axis=0)
+
+    label_38, label_811 = label = np.zeros((mix38['arr_0'].shape[0]), dtype=np.uint8), np.ones((wm811.shape[0]), dtype=np.uint8)
 
     label = np.append(label_38, label_811)
 
-    im = np.zeros((sample_num, 52 * 52), dtype=np.uint8)
-    im = sample.reshape(sample_num, 52 * 52)
+    im = np.zeros((sample_num, 52* 52), dtype=np.uint8)
+    im = sample.reshape(sample_num, 52 *52)
     im = im.astype(float)
 
     tsne = manifold.TSNE(n_components=2, init='pca', random_state=501)
@@ -78,9 +83,10 @@ for i, defect in enumerate(defect_list, 1):
 
     # reducer = umap.UMAP()
     # embedding = reducer.fit_transform(im)
-
+    
     plt.subplot(3, 3, i)
-    plt.title(f't-SNE projection of {defect} in two datasets')
+    plt.suptitle('t-SNE Projections of Defects in Two Datasets', fontsize=16)
+    plt.title(f'{defect}')
     plt.scatter(embedding[:, 0], embedding[:, 1], c=label, cmap='Spectral', s=5)
     plt.gca().set_aspect('equal', 'datalim')
     plt.colorbar(boundaries=np.arange(3) - 0.5).set_ticks(np.arange(2))
