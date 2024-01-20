@@ -12,24 +12,22 @@ from torchvision import datasets, transforms, models
 from torch.utils.data import DataLoader, Dataset
 from torch.autograd import Variable
 from torch.utils import model_zoo
-from sklearn.preprocessing import LabelEncoder
 import torch.utils.data as data
 from torch.autograd import Variable
 import torch.nn as nn
 import torchvision.models as models
+from layers_train_pytorch import ConvOffset2D
+import torch.nn.functional as F
 
 ################
 # get dataset
 ################
 class MultiLabelWebDataset(Dataset):
-  def __init__(self, root_dir, classes, transform=None, soft_label_class_name=None, soft_label=0.5):
-    # soft_label_class_name : name of the class that is given a soft label < 1
+  def __init__(self, root_dir, classes, transform=None):
     self.root_dir = root_dir
     self.transform = transform
     self.classes = classes
     self.class_to_idx = {c:i for i, c in enumerate(self.classes)}
-    self.soft_label_class_name = soft_label_class_name
-    self.soft_label = soft_label  
     self.data = self.make_dataset()                                        
                                                       
   def __len__(self):
@@ -47,20 +45,12 @@ class MultiLabelWebDataset(Dataset):
         for fname in sorted(fnames):  # for each image
           label = [0]*len(self.classes)
           path = os.path.join(self.root_dir, target_class, fname)
-
-          if len(class_names)==1:  # images that contain only one class
-            single_cls = class_names[0]
-            if single_cls==self.soft_label_class_name:
-              label[self.class_to_idx[single_cls]] = self.soft_label
-            else:
-              label[self.class_to_idx[single_cls]] = 1.
-
-          elif len(class_names)==2:  # images that contain two classes
-            for cls in class_names:
-              if cls==self.soft_label_class_name:
-                label[self.class_to_idx[cls]] = self.soft_label      
-              else:
-                label[self.class_to_idx[cls]] = 1.
+          # if len(class_names)==1:  # images that contain only one class
+          single_cls = class_names[0]
+          label[self.class_to_idx[single_cls]] = 1.
+          # elif len(class_names)==2:  # images that contain two classes
+          #   for cls in class_names:
+          #     label[self.class_to_idx[cls]] = 1.
           item = path, label
           instances.append(item)
     return instances
@@ -69,51 +59,21 @@ class MultiLabelWebDataset(Dataset):
     if torch.is_tensor(idx):
       idx = idx.tolist()
     path, target = self.data[idx]
-    image = Image.open(path)
-    print('image shape =', image.shape)
+    image = Image.open(path).convert('RGB')
+    image_array = np.array(image)
+    first_channel = image_array[:, :, 0]
+    # mapping = {0: 0, 128: 1, 255: 2}
+    # mapping = {k: v if v is not None else 0 for k, v in mapping.items()}
+
+    # # 使用np.vectorize
+    # first_channel = np.vectorize(mapping.get, otypes=[np.uint8])(first_channel)
+    # first_channel = np.where(first_channel is None, 0, first_channel)
+    # print(first_channel[10])
     if self.transform:
-      image = self.transform(image)
+      image = self.transform(first_channel)
+      # plt.imshow(first_channel)
+      # plt.show
     return image, torch.tensor(target)
-  
-
-################
-# load_model_stylized_imagenet
-################
-# def load_model_stylized_imagenet(model_name):
-#     model_urls = {
-#             'resnet50_trained_on_SIN': 'https://bitbucket.org/robert_geirhos/texture-vs-shape-pretrained-models/raw/6f41d2e86fc60566f78de64ecff35cc61eb6436f/resnet50_train_60_epochs-c8e5653e.pth.tar',
-#             'resnet50_trained_on_SIN_and_IN': 'https://bitbucket.org/robert_geirhos/texture-vs-shape-pretrained-models/raw/60b770e128fffcbd8562a3ab3546c1a735432d03/resnet50_train_45_epochs_combined_IN_SF-2a0d100e.pth.tar',
-#             'resnet50_trained_on_SIN_and_IN_then_finetuned_on_IN': 'https://bitbucket.org/robert_geirhos/texture-vs-shape-pretrained-models/raw/60b770e128fffcbd8562a3ab3546c1a735432d03/resnet50_finetune_60_epochs_lr_decay_after_30_start_resnet50_train_45_epochs_combined_IN_SF-ca06340c.pth.tar',
-#             'alexnet_trained_on_SIN': 'https://bitbucket.org/robert_geirhos/texture-vs-shape-pretrained-models/raw/0008049cd10f74a944c6d5e90d4639927f8620ae/alexnet_train_60_epochs_lr0.001-b4aa5238.pth.tar',
-#     }
-#     if "resnet50" in model_name:
-#         print("Using the ResNet50 architecture.")
-#         model = torchvision.models.resnet50(pretrained=False)
-#         model = torch.nn.DataParallel(model).cuda()
-#         checkpoint = model_zoo.load_url(model_urls[model_name])
-
-#     elif "vgg16" in model_name:
-#         print("Using the VGG-16 architecture.")
-#         # download model from URL manually and save to desired location
-#         filepath = "./vgg16_train_60_epochs_lr0.01-6c6fcc9f.pth.tar"
-#         assert os.path.exists(filepath), "Please download the VGG model yourself from the following link and save it locally: https://drive.google.com/drive/folders/1A0vUWyU6fTuc-xWgwQQeBvzbwi6geYQK (too large to be downloaded automatically like the other models)"
-#         model = torchvision.models.vgg16(pretrained=True)
-#         model.features = torch.nn.DataParallel(model.features)
-#         model.cuda()
-#         checkpoint = torch.load(filepath)
-
-#     elif "alexnet" in model_name:
-#         print("Using the AlexNet architecture.")
-#         model = torchvision.models.alexnet(pretrained=False)
-#         model.features = torch.nn.DataParallel(model.features)
-#         model.cuda()
-#         checkpoint = model_zoo.load_url(model_urls[model_name])
-#     else:
-#         raise ValueError("unknown model architecture.")
-
-#     model.load_state_dict(checkpoint["state_dict"])
-#     return model
-
 
 ################
 # T-SNE
@@ -125,7 +85,7 @@ def scale_to_01_range(x):
   return starts_from_zero / value_range
 
 def plot_tsne(dataloader, encoder, plot_imgs=False, model_type='resnet50'):
-    assert model_type in ['resnet50', 'vgg16'], 'model_type must be one of "resnet50" or "vgg16"!'
+    # assert model_type in ['resnet50', 'vgg16'], 'model_type must be one of "resnet50" or "vgg16"!'
     encoder = encoder.cuda().eval()
 
     for i, (data, target, fname) in enumerate(dataloader):
@@ -143,17 +103,16 @@ def plot_tsne(dataloader, encoder, plot_imgs=False, model_type='resnet50'):
                 outputs = encoder.classifier[2](outputs)
                 outputs = encoder.classifier[3](outputs)
                 outputs = encoder.classifier[4](outputs)
-
         outputs = outputs.cpu().numpy()
         features = outputs if i == 0 else np.concatenate((features, outputs), axis=0)
         labels = target if i == 0 else np.concatenate((labels, target), axis=0)
         fnames = list(fname) if i == 0 else fnames + list(fname)
 
     print("# of samples : {} \n feature-dim : {}".format(features.shape[0], features.shape[1]))
-    tsne = TSNE(n_components=2).fit_transform(features)
+    tsne = TSNE(n_components=2, init='pca', random_state=501).fit_transform(features)
 
     # extract x and y coordinates representing the positions of the images on T-SNE plot
-    fig = plt.figure(figsize=(16, 10))
+    fig = plt.figure(figsize=(12, 8))
     tx = scale_to_01_range(tsne[:, 0])
     ty = scale_to_01_range(tsne[:, 1])
 
@@ -162,21 +121,22 @@ def plot_tsne(dataloader, encoder, plot_imgs=False, model_type='resnet50'):
     colors = ['#FF0000', '#FF6400', '#FFDA01', '#64FF0A', '#0BFFDF', '#0029FF', '#9B00FF', '#000000', '#5A2E00']
     colors *= 2  # Repeat twice to have 20 colors
     colors_per_class = {label: colors[i % len(colors)] for i, label in enumerate(classes)}
-
+    print('color',colors)
+    print('colors_per_class',colors_per_class)
     if plot_imgs:
         width, height = 4000, 3000
         max_dim = 100
         full_image = Image.new('RGBA', (width, height))
         img_paths = fnames
 
-    fig = plt.figure(figsize=(8, 5))
+    # fig = plt.figure(figsize=(8, 5))
     ax = fig.add_subplot(111)
 
     for label in colors_per_class:
         indices = [i for i, l in enumerate(labels) if l == class2idx[label]]
         current_tx = np.take(tx, indices)
         current_ty = np.take(ty, indices)
-
+        
         if plot_imgs:
             current_img_paths = np.take(img_paths, indices)
             for img, x, y in zip(current_img_paths, current_tx, current_ty):
@@ -188,17 +148,16 @@ def plot_tsne(dataloader, encoder, plot_imgs=False, model_type='resnet50'):
             color = colors_per_class[label]
             # Set marker as 'o' for the first 10 classes, and '^' for the rest (triangles)
             if label.startswith('811-'):
-                marker = 'o'  
+                marker = 'o' 
+                print('current_tx(811)' ,len(current_tx)) 
                 ax.scatter(current_tx, current_ty, c=color, label=label, alpha=0.5, marker=marker)
             else:
                 marker = '^'
-                ax.scatter(current_tx, current_ty,edgecolors = 'black' ,c=color, label=label, alpha=0.5, marker=marker)
+                print('current_tx(38)' ,len(current_tx)) 
+                ax.scatter(current_tx, current_ty, edgecolors='black', c=color, label=label, alpha=0.5, marker=marker)
 
     ax.legend(loc='best')
     plt.show()
-
-
-
 
 ################
 # confusion matrix
@@ -225,7 +184,7 @@ def calculate_confusion_matrix(encoder,
     for img_path in os.listdir(os.path.join(img_dir, cl)): # for each image
       test_labels.append(cls_i)
       img = Image.open(os.path.join(img_dir, cl, img_path)).convert('RGB')     
-      img = transform(img)[:3, :, :].unsqueeze(0)    
+      img = transform(img)[:1, :, :].unsqueeze(0)    
       img = img.cuda() if use_cuda else img
       with torch.no_grad():
         logits = encoder(img)
@@ -265,20 +224,25 @@ if __name__ =="__main__":
   ################
   # set transform rule
   ################
-  transform_ = transforms.Compose([transforms.Resize((52 ,52)),
-                                  transforms.RandomHorizontalFlip(),
+  transform_ = transforms.Compose([transforms.ToPILImage(),
+                                  transforms.Resize((52 ,52)),
+                                  #transforms.RandomHorizontalFlip(),
                                   transforms.ToTensor()])
+  transform_COM = transforms.Compose([
+                                transforms.Resize((52 ,52)),
+                                #transforms.RandomHorizontalFlip(),
+                                transforms.ToTensor()
+                                #transforms.Reshape(52,52,3)
+                                ])
 
   ################
   # set source data
   ################
   src_root_dir = "38"## insert your data folder here ##
-  classes=['Center','Donut','Edge-loc','Edge-ring','Loc','Near-full','Normal','Random','Scratch']
-  # soft_label_class_name="benign"
-  soft_label=0.5 # weaker label < 1 
-  train_data_multi_label = MultiLabelWebDataset(src_root_dir + '/train', classes=classes, transform = transform_, soft_label_class_name=None, soft_label=soft_label)
-  valid_data_multi_label = MultiLabelWebDataset(src_root_dir + '/valid', classes=classes, transform = transform_, soft_label_class_name=None, soft_label=soft_label)
-  test_data_multi_label = MultiLabelWebDataset(src_root_dir + '/test', classes=classes, transform = transform_, soft_label_class_name=None, soft_label=soft_label)
+  classes=['Center','Donut','Edge-loc','Edge-ring','Loc','Near-full','Normal','Random','Scratch'] 
+  train_data_multi_label = MultiLabelWebDataset(src_root_dir + '/train', classes=classes, transform = transform_)
+  valid_data_multi_label = MultiLabelWebDataset(src_root_dir + '/valid', classes=classes, transform = transform_)
+  test_data_multi_label = MultiLabelWebDataset(src_root_dir + '/test', classes=classes, transform = transform_)
   print("Class2idx: ", train_data_multi_label.class_to_idx)
   num_workers = 0
   batch_size = 100
@@ -297,16 +261,17 @@ if __name__ =="__main__":
   num_workers = 0
   batch_size = 100
   tgt_root_dir = '811/train'
-  wm811_dataset = datasets.ImageFolder(tgt_root_dir, transform = transform_) # resize only
+  wm811_dataset = MultiLabelWebDataset(tgt_root_dir, classes = classes, transform = transform_) # resize only
+
   wm811_dataloader = DataLoader(wm811_dataset, batch_size=batch_size, num_workers=num_workers, shuffle=True)
   print("Classes: ", wm811_dataset.class_to_idx)
-  print("Number of wm811 images : {}    Number of wm811 batches : {}  (batch size={})".format(len(wm811_dataloader.dataset), len(wm811_dataloader), batch_size))
+  print("Number of wm811_test images : {}    Number of wm811_test batches : {}  (batch size={})".format(len(wm811_dataloader.dataset), len(wm811_dataloader), batch_size))
 
   tgt_root_dir_test = '811/test'
-  wm811_test_dataset = datasets.ImageFolder(tgt_root_dir_test, transform = transform_) # resize only
+  wm811_test_dataset = MultiLabelWebDataset(tgt_root_dir_test, classes = classes, transform = transform_) # resize only
   wm811_test_dataloader = DataLoader(wm811_test_dataset, batch_size=batch_size, num_workers=num_workers, shuffle=True)
   print("Classes: ", wm811_test_dataset.class_to_idx)
-  print("Number of wm811 images : {}    Number of wm811 batches : {}  (batch size={})".format(len(wm811_test_dataset), len(wm811_test_dataloader), batch_size))
+  print("Number of wm811_test images : {}    Number of wm811_test batches : {}  (batch size={})".format(len(wm811_test_dataset), len(wm811_test_dataloader), batch_size))
 
 
 
@@ -316,16 +281,23 @@ if __name__ =="__main__":
   data_path = 'combine'
   num_workers = 0
   batch_size = 100
-
+  
   class ImageFolderWithPaths(datasets.ImageFolder):
     ''' dataset containing images as well as image filenames '''
     def __getitem__(self, index):
-      original_tuple = super(ImageFolderWithPaths, self).__getitem__(index)
-      path = self.imgs[index][0]
-      tuple_with_path = (original_tuple + (path,))
-      return tuple_with_path
-
-  combined_dataset = ImageFolderWithPaths(data_path, transform = transform_) 
+        original_tuple = super(ImageFolderWithPaths, self).__getitem__(index)
+        path = self.imgs[index][0]
+        
+        # Extract the first channel from the image tensor
+        image_tensor = original_tuple[0][0, :, :].unsqueeze(0)  # Assuming the tensor is of shape (52, 52, 3)
+        # print('image_tensor:',image_tensor.shape)
+        # Create a new tuple with the modified image tensor
+        tuple_with_modified_tensor = (image_tensor, original_tuple[1], path)
+        
+        return tuple_with_modified_tensor
+  combined_dataset = ImageFolderWithPaths(data_path, transform = transform_COM) 
+  # combine_classes = combined_dataset.classes
+  # combined_dataset = MultiLabelWebDataset(data_path, classes=combine_classes ,  transform = transform_) 
   print('combined_dataset:',combined_dataset)
   combined_dataloader = DataLoader(combined_dataset, batch_size=batch_size, num_workers=num_workers, shuffle=True)
   print("Classes: ", combined_dataset.classes)
@@ -425,8 +397,8 @@ if __name__ =="__main__":
         feat_tgt = encoder(images_tgt)
         
         ### Concatenate source domain and target domain features ###
-        feat_concat = torch.cat((feat_src, feat_tgt), 0) # [batch_size*2, 2048, 1, 1]
-        feat_concat = feat_concat.squeeze(-1).squeeze(-1)  # [batch_size*2, 2048]
+        feat_concat = torch.cat((feat_src, feat_tgt), 0) # [batch_size*2, 512, 1, 1]
+        feat_concat = feat_concat.squeeze(-1).squeeze(-1)  # [batch_size*2, 512]
 
         ### Forward concatenated features through Discriminator ###
         pred_concat = discriminator(feat_concat.detach())
@@ -510,12 +482,12 @@ if __name__ =="__main__":
       if ((epoch+1)%10 == 0) or (epoch == 0):
         print('class:',src_data_loaders['train'].dataset.classes)
       if ((epoch+1)%50 == 0) or (epoch == 0):
-        cm = calculate_confusion_matrix(encoder, classifier, transform=transform_, classes=src_data_loaders['train'].dataset.classes, 
+        cm = calculate_confusion_matrix(encoder, classifier, transform=transform_COM, classes=src_data_loaders['train'].dataset.classes, 
                                         img_dir=src_test_dir, threshold=0.5, multi_label=False)#, test=True)
         print("--Source Domain Confusion Matrix--")
         print(cm)
         # to be more lenient for target domain class deteciton, set threshold to be lower than 0.5 (e.g. 0.2)
-        cm = calculate_confusion_matrix(encoder, classifier, transform=transform_, classes=tgt_data_loader_small.dataset.classes, 
+        cm = calculate_confusion_matrix(encoder, classifier, transform=transform_COM, classes=tgt_data_loader_small.dataset.classes, 
                                         img_dir=tgt_test_dir, threshold=test_threshold, multi_label=False)#, test=True)
         print("--Target Domain Confusion Matrix--")
         print(cm)
@@ -577,37 +549,83 @@ if __name__ =="__main__":
 
       def forward(self, x):
           return self.resnet50(x)
-      
+  
+
+  #######
+  #deformable
+  ######
+  class Mymodel(nn.Module):
+    def __init__(self, in_channels, out_class_dim, trainable=True):
+        super().__init__()
+        self.conv_num = 32  # Assuming this value
+
+        self.conv_block_1= self.ConvBolck(in_channels, self.conv_num)
+        self.conv_block_2= self.ConvBolck(self.conv_num, self.conv_num* 2)
+        self.conv_block_3= self.ConvBolck(self.conv_num* 2, self.conv_num* 4)
+        self.conv_block_4= self.ConvBolck(self.conv_num* 4, self.conv_num* 8)
+        self.conv_block_5= self.ConvBolck(self.conv_num* 8, self.conv_num* 4)
+        
+        self.global_avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Linear(self.conv_num*4, out_class_dim)
+        self.sigmoid = nn.Sigmoid()
+    
+    def ConvBolck(self, in_channels, out_channels):
+        conv_block= nn.Sequential(ConvOffset2D(in_channels),
+        nn.Conv2d(in_channels, out_channels, (3,3), stride=(2, 2), padding= 1),
+                                                    nn.BatchNorm2d(out_channels),
+                                                    nn.ReLU())
+        return conv_block
+#     # Deformable forward
+    def forward(self, x):      
+        x_1= self.conv_block_1(x)
+        x_2= self.conv_block_2(x_1)
+        x_3= self.conv_block_3(x_2)
+        x_4= self.conv_block_4(x_3)
+        x_5= self.conv_block_5(x_4)
+        x_6 = self.global_avg_pool(x_5)
+        x_7 = torch.flatten(x_6, 1)
+        x_8 = self.fc(x_7)
+        output = self.sigmoid(x_8)
+        return output
+
+
+
+
+
   def define_models(n_classes, pretrained_on="imagenet"):
     assert(pretrained_on in ["imagenet", "stylized_imagenet"]), 'pretrained_on must be set to one of "imagenet" or "stylized_imagenet"!'
     # For encoder pre-trained on Stylized ImageNet
     if pretrained_on=="stylized_imagenet":
-      # model = load_model_stylized_imagenet("resnet50_trained_on_SIN_and_IN_then_finetuned_on_IN").module # best performing model from the paper
       classifier = nn.Linear(in_features=512, out_features=n_classes, bias=True)
 
     # For encoder pre-trained on ImageNet
     elif pretrained_on=="imagenet":
-      model = ModifiedResNet50(3)
+      model = ModifiedResNet50(1)
 
       classifier = nn.Linear(512, n_classes) 
-    
-    # Define discriminator
-    encoder = nn.Sequential(*[model.resnet50.conv1, model.resnet50.bn1, model.resnet50.relu, model.resnet50.maxpool,  model.resnet50.layer1,model.resnet50.layer2, model.resnet50.avgpool])#model.resnet50.layer1, model.resnet50.layer2, model.resnet50.layer3,
+        # Define discriminator
+    encoder = nn.Sequential(*[model.resnet50.conv1, model.resnet50.bn1, model.resnet50.relu, model.resnet50.maxpool, model.resnet50.layer1, model.resnet50.layer2, model.resnet50.avgpool])#model.resnet50.layer1, model.resnet50.layer2, model.resnet50.layer3,
     # encoder = nn.Sequential(*[model.features,model.avgpool])
     discriminator = Discriminator(feature_dim=512)
     print('encoder:',encoder)
     print('Classifier:',classifier)
     print("discriminator",discriminator)
     return encoder, classifier, discriminator
+    
+
+
+
+  
+    
+
+
   
   n_classes = len(dataloaders_multi_label['train'].dataset.classes)
   encoder, classifier, discriminator = define_models(n_classes)
 
-
-
   print("classes : {}".format(train_data_multi_label.classes))
   encoder, classifier, classification_losses_E, domain_confusion_losses_E, losses_D, accs_D = train_adda(num_epochs = 5000,
-                                                                                                       lr = 1e-6,
+                                                                                                       lr = 3e-7,
                                                                                                        save_step = 5,
                                                                                                        encoder = encoder, 
                                                                                                        classifier = classifier,
@@ -619,6 +637,6 @@ if __name__ =="__main__":
                                                                                                        tgt_test_dir = "811/test",
                                                                                                        combined_dataloader = combined_dataloader,
                                                                                                        alpha_CLS = 1,
-                                                                                                       alpha_DA = 1.5,
+                                                                                                       alpha_DA = 0.3,
                                                                                                        multi_label = True,
                                                                                                        test_threshold=0.2)
