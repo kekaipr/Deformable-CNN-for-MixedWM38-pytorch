@@ -18,7 +18,10 @@ import torch.nn as nn
 import torchvision.models as models
 from layers_train_pytorch import ConvOffset2D
 import torch.nn.functional as F
-
+import Performance_Matrices as PM
+from sklearn.metrics import classification_report
+import warnings
+warnings.filterwarnings("ignore")
 ################
 # get dataset
 ################
@@ -121,8 +124,8 @@ def plot_tsne(dataloader, encoder, plot_imgs=False, model_type='resnet50'):
     colors = ['#FF0000', '#FF6400', '#FFDA01', '#64FF0A', '#0BFFDF', '#0029FF', '#9B00FF', '#000000', '#5A2E00']
     colors *= 2  # Repeat twice to have 20 colors
     colors_per_class = {label: colors[i % len(colors)] for i, label in enumerate(classes)}
-    print('color',colors)
-    print('colors_per_class',colors_per_class)
+    # print('color',colors)
+    # print('colors_per_class',colors_per_class)
     if plot_imgs:
         width, height = 4000, 3000
         max_dim = 100
@@ -149,11 +152,11 @@ def plot_tsne(dataloader, encoder, plot_imgs=False, model_type='resnet50'):
             # Set marker as 'o' for the first 10 classes, and '^' for the rest (triangles)
             if label.startswith('811-'):
                 marker = 'o' 
-                print('current_tx(811)' ,len(current_tx)) 
+                # print('current_tx(811)' ,len(current_tx)) 
                 ax.scatter(current_tx, current_ty, c=color, label=label, alpha=0.5, marker=marker)
             else:
                 marker = '^'
-                print('current_tx(38)' ,len(current_tx)) 
+                # print('current_tx(38)' ,len(current_tx)) 
                 ax.scatter(current_tx, current_ty, edgecolors='black', c=color, label=label, alpha=0.5, marker=marker)
 
     ax.legend(loc='best')
@@ -185,7 +188,7 @@ def calculate_confusion_matrix(encoder,
       test_labels.append(cls_i)
       img = Image.open(os.path.join(img_dir, cl, img_path)).convert('RGB')     
       img = transform(img)[:1, :, :].unsqueeze(0)    
-      img = img.cuda() if use_cuda else img
+      img = img.cuda() if use_cuda else imguse_cuda100
       with torch.no_grad():
         logits = encoder(img)
         logits = torch.flatten(logits, 1)
@@ -206,7 +209,8 @@ def calculate_confusion_matrix(encoder,
   if multi_label==False:
     # using sklearn.metrics.confusion_matrix
     cm = confusion_matrix(test_labels, test_preds, labels=np.arange(n_classes))
-  return cm
+    report = classification_report(test_labels, test_preds, target_names=classes, output_dict = True,zero_division = 0.0)
+  return cm ,report
 
 ################
 # make_variable
@@ -224,12 +228,13 @@ if __name__ =="__main__":
   ################
   # set transform rule
   ################
+  device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
   transform_ = transforms.Compose([transforms.ToPILImage(),
-                                  transforms.Resize((52 ,52)),
+                                  #transforms.Resize((52 ,52)),
                                   #transforms.RandomHorizontalFlip(),
                                   transforms.ToTensor()])
   transform_COM = transforms.Compose([
-                                transforms.Resize((52 ,52)),
+                                #transforms.Resize((52 ,52)),
                                 #transforms.RandomHorizontalFlip(),
                                 transforms.ToTensor()
                                 #transforms.Reshape(52,52,3)
@@ -245,7 +250,7 @@ if __name__ =="__main__":
   test_data_multi_label = MultiLabelWebDataset(src_root_dir + '/test', classes=classes, transform = transform_)
   print("Class2idx: ", train_data_multi_label.class_to_idx)
   num_workers = 0
-  batch_size = 100
+  batch_size = 1000
   dataloaders_multi_label = {}
   dataloaders_multi_label['train'] = DataLoader(train_data_multi_label, batch_size=batch_size, num_workers=num_workers, shuffle=True)
   dataloaders_multi_label['valid'] = DataLoader(valid_data_multi_label, batch_size=batch_size, num_workers=num_workers, shuffle=True)
@@ -259,20 +264,25 @@ if __name__ =="__main__":
   # set target train/test data
   ################
   num_workers = 0
-  batch_size = 100
+  batch_size = 1000
+
   tgt_root_dir = '811/train'
   wm811_dataset = MultiLabelWebDataset(tgt_root_dir, classes = classes, transform = transform_) # resize only
-
   wm811_dataloader = DataLoader(wm811_dataset, batch_size=batch_size, num_workers=num_workers, shuffle=True)
   print("Classes: ", wm811_dataset.class_to_idx)
   print("Number of wm811_test images : {}    Number of wm811_test batches : {}  (batch size={})".format(len(wm811_dataloader.dataset), len(wm811_dataloader), batch_size))
 
+  tgt_root_dir_valid = '811/valid'
+  wm811_valid_dataset = MultiLabelWebDataset(tgt_root_dir_valid, classes = classes, transform = transform_) # resize only
+  wm811_valid_dataloader = DataLoader(wm811_valid_dataset, batch_size=batch_size, num_workers=num_workers, shuffle=True)
+  print("Classes: ", wm811_valid_dataset.class_to_idx)
+  print("Number of wm811_valid images : {}    Number of wm811_test batches : {}  (batch size={})".format(len(wm811_valid_dataset), len(wm811_valid_dataloader), batch_size))
+
   tgt_root_dir_test = '811/test'
   wm811_test_dataset = MultiLabelWebDataset(tgt_root_dir_test, classes = classes, transform = transform_) # resize only
-  wm811_test_dataloader = DataLoader(wm811_test_dataset, batch_size=batch_size, num_workers=num_workers, shuffle=True)
+  wm811_test_dataloader = DataLoader(wm811_test_dataset, batch_size=1, num_workers=num_workers, shuffle=True)
   print("Classes: ", wm811_test_dataset.class_to_idx)
   print("Number of wm811_test images : {}    Number of wm811_test batches : {}  (batch size={})".format(len(wm811_test_dataset), len(wm811_test_dataloader), batch_size))
-
 
 
   ################
@@ -280,7 +290,7 @@ if __name__ =="__main__":
   ################
   data_path = 'combine'
   num_workers = 0
-  batch_size = 100
+  batch_size = 1000
   
   class ImageFolderWithPaths(datasets.ImageFolder):
     ''' dataset containing images as well as image filenames '''
@@ -312,6 +322,7 @@ if __name__ =="__main__":
   #######################################################################################################################
   def train_adda(num_epochs,  # number of epochs to train
                lr,          # learning rate
+               stop_num,
                save_step,   # save model checkpoint every this number of epochs 
                encoder,        
                classifier,            
@@ -351,9 +362,11 @@ if __name__ =="__main__":
       classifier.cuda()
 
     classification_losses_E, domain_confusion_losses_E, losses_D, accs_D = [], [], [], []
-    train_loss_E_class, train_loss_E_domain, train_loss_D, train_acc_D = 0., 0., 0., 0.
-    valid_loss_class, val_n_corr_class = 0., 0 # only check for class-classification for validation (no domain-related tasks)
+    train_loss_E_class, train_loss_E_domain, train_loss_D, train_acc_D, target_valid_loss = 0., 0., 0., 0., 0.
+    valid_loss_class, temp = 0., 0 # only check for class-classification for validation (no domain-related tasks)
 
+    
+    early_stop = {'count' :0 , 'best_epoch':0,'ACC':0}
     ### Start Training! ###
     for epoch in range(num_epochs):
       #### 1. Plot t-SNE plot with source and target domain features together ####
@@ -366,6 +379,7 @@ if __name__ =="__main__":
 
       ####################  2. Loop through Training batches  ####################
       for step, ((images_src, tgt_src), (images_tgt, _)) in enumerate(zip(src_data_loaders['train'], tgt_data_loader)): 
+        
         ##########################################################################
         #######  2.1 Train Source Encoder & Classifier with class labels  ########
         ##########################################################################
@@ -373,6 +387,8 @@ if __name__ =="__main__":
         classifier.train()
         images_src, images_tgt = make_variable(images_src), make_variable(images_tgt)
         tgt_src = tgt_src.type(torch.FloatTensor).cuda() if multi_label else make_variable(tgt_src)
+        # print('tgt_src',tgt_src)
+        # print('tgt_src shape',tgt_src.shape)
         optimizer_encoder.zero_grad()
         optimizer_classifier.zero_grad()
 
@@ -380,12 +396,12 @@ if __name__ =="__main__":
         output = encoder(images_src)    # [batch_size, n_classes]  (target: [batch_size])
         output = torch.flatten(output, 1)
         output = classifier(output)
-
+        # print('tgt_src',output)
+        # print('tgt_src shape',output.shape)
         ### Calculate class-classification loss for Encoder and Classifier ###
         loss_CLS = criterion_cls(output, tgt_src)
         train_loss_E_class += loss_CLS.item() 
         
-
         ##########################################################################   
         #############  2.2 Train Discriminator with domain labels  ###############
         ##########################################################################
@@ -399,7 +415,7 @@ if __name__ =="__main__":
         ### Concatenate source domain and target domain features ###
         feat_concat = torch.cat((feat_src, feat_tgt), 0) # [batch_size*2, 512, 1, 1]
         feat_concat = feat_concat.squeeze(-1).squeeze(-1)  # [batch_size*2, 512]
-
+        # feat_concat = torch.flatten(feat_concat, 1)
         ### Forward concatenated features through Discriminator ###
         pred_concat = discriminator(feat_concat.detach())
 
@@ -439,79 +455,121 @@ if __name__ =="__main__":
 
         ### For encoder and Classifier, 
         ### optimize class-classification & fake domain-classification losses together ###
-        loss_total = alpha_CLS * loss_CLS +  alpha_DA * loss_DA
+        loss_total = (alpha_CLS * loss_CLS) +  (alpha_DA * loss_DA)
         loss_total.backward()
         optimizer_encoder.step()
         optimizer_classifier.step()
-      #################### 3. Loop through Validation batches ####################
-      encoder.eval()
-      classifier.eval()
-      for data, target in src_data_loaders['valid']:
-        data = make_variable(data)
-        target = target.type(torch.FloatTensor).cuda() if multi_label else make_variable(target)
-        with torch.no_grad():
-          output = encoder(data)    # [batch_size, n_classes]  (target: [batch_size])
-          output = torch.flatten(output, 1)
-          output = classifier(output)
+        
+        
+        
+      ################### target valid (for early stop) #########################
 
-        loss = criterion_cls(output, target)
-        valid_loss_class += loss.item()
-        if multi_label==False:
-          output = output.cpu().detach().numpy()
-          val_n_corr_class += int(sum([np.argmax(pred)==target[i] for i, pred in enumerate(output)]))
+      #################### 3. Loop through Validation batches ####################
+      if ((epoch+1)%1 == 0) or (epoch == 0):
+        encoder.eval()
+        classifier.eval()
+        for data, target in src_data_loaders['valid']:
+          data = make_variable(data)
+          target = target.type(torch.FloatTensor).cuda() if multi_label else make_variable(target)
+          with torch.no_grad():
+            output = encoder(data)    # [batch_size, n_classes]  (target: [batch_size])
+            output = torch.flatten(output, 1)
+            output = classifier(output)
+
+          loss = criterion_cls(output, target)
+          valid_loss_class += loss.item()
+          if multi_label==False:
+            output = output.cpu().detach().numpy()
+            # print('output:', output)
+            # print('output shape:', output.shape)
+            # val_n_corr_class += int(sum([np.argmax(pred)==target[i] for i, pred in enumerate(output)]))
+
 
       ####################  4. Log train/validation losses  ######################
-      # print("train_acc_D:",train_acc_D,"min(len(src_data_loaders['train']), len(tgt_data_loader)):",min(len(src_data_loaders['train']), len(tgt_data_loader)))
+      
       train_acc_D = train_acc_D/min(len(src_data_loaders['train']), len(tgt_data_loader))
-      if ((epoch+1)%10 == 0) or (epoch == 0):
-        print('\n-----Epoch: %d/%d-----'%(epoch+1, num_epochs))
-        print('Train Classification Loss (E,C): %.3f  Train Domain Confusion Loss (E): %.3f  Valid Classification Loss (E,C): %.3f'%(train_loss_E_class, train_loss_E_domain, valid_loss_class))  
-        print('Domain Classification Loss (D): %.3f  Domain Classification Accuracy (D): %.3f  elapsed time: %.1fs'%(train_loss_D, train_acc_D, time.time()-start))  
-      if multi_label==False:
-        valid_acc = val_n_corr_class/len(src_data_loaders['valid'].dataset)
+      print('\n-----Epoch: %d/%d-----'%(epoch+1, num_epochs),'the best acc is',early_stop['ACC'],'in epoch',early_stop['best_epoch'])
+      if ((epoch+1)%50 == 0) or (epoch == 0):
+        print('Train Classification Loss (E,C): %.3f  Train Domain Confusion Loss (E): %.3f  Valid Classification Loss (E,C): %.3f'%(train_loss_E_class/min(len(src_data_loaders['train']), len(tgt_data_loader)), train_loss_E_domain/min(len(src_data_loaders['train']), len(tgt_data_loader)), valid_loss_class/len(src_data_loaders['valid'])))
+        print('Domain Classification Loss (D): %.3f  Domain Classification Accuracy (D): %.3f  elapsed time: %.1fs'%(train_loss_D/min(len(src_data_loaders['train']), len(tgt_data_loader)), train_acc_D, time.time()-start))
+        print('Total loss : ', loss_total.item())
+      # if multi_label==False:
+      #   valid_acc = val_n_corr_class/len(src_data_loaders['valid'].dataset)
 
       ### Reset running losses/accuracies to zero ###
       classification_losses_E.append(train_loss_E_class)
       domain_confusion_losses_E.append(train_loss_E_domain)
       losses_D.append(train_loss_D)
       accs_D.append(train_acc_D)
-      train_loss_E_class, train_loss_E_domain, train_loss_D, running_acc_D, val_n_corr, valid_loss_class , train_acc_D= 0., 0., 0., 0., 0. , 0., 0.
+      train_loss_E_class, train_loss_E_domain, train_loss_D, valid_loss_class , train_acc_D= 0., 0., 0., 0., 0. 
 
       #########  5. Show confusion matrices for both domains' test sets  #########
       # set threshold=0.5 for source domain confusion matrix 
-      if ((epoch+1)%10 == 0) or (epoch == 0):
-        print('class:',src_data_loaders['train'].dataset.classes)
       if ((epoch+1)%50 == 0) or (epoch == 0):
-        cm = calculate_confusion_matrix(encoder, classifier, transform=transform_COM, classes=src_data_loaders['train'].dataset.classes, 
-                                        img_dir=src_test_dir, threshold=0.5, multi_label=False)#, test=True)
+        print('class:',src_data_loaders['train'].dataset.classes)
+      
+      cm, _ = calculate_confusion_matrix(encoder, classifier, transform=transform_COM, classes=src_data_loaders['train'].dataset.classes, 
+                                      img_dir=src_test_dir, threshold=0.5, multi_label=False)#, test=True)
+      
+      
+      if ((epoch+1)%50 == 0) or (epoch == 0):
         print("--Source Domain Confusion Matrix--")
         print(cm)
-        # to be more lenient for target domain class deteciton, set threshold to be lower than 0.5 (e.g. 0.2)
-        cm = calculate_confusion_matrix(encoder, classifier, transform=transform_COM, classes=tgt_data_loader_small.dataset.classes, 
-                                        img_dir=tgt_test_dir, threshold=test_threshold, multi_label=False)#, test=True)
+      # to be more lenient for target domain class deteciton, set threshold to be lower than 0.5 (e.g. 0.2)
+      cm, report = calculate_confusion_matrix(encoder, classifier, transform=transform_COM, classes=tgt_data_loader_small.dataset.classes, 
+                                      img_dir=tgt_test_dir, threshold=test_threshold, multi_label=False)#, test=True)
+      
+      
+      if ((epoch+1)%50 == 0) or (epoch == 0):
         print("--Target Domain Confusion Matrix--")
         print(cm)
-        print()
+      accThisEpoch = report['accuracy']
 
       ######################  6. Save model checkpoints  #########################
       ### Save model if validtion loss is smaller than previous epoch's ###
-      if valid_loss_class < valid_loss_min:
-        ### Delete previously saved model checkpoint ###
-        if prev_save:
-          os.remove("0119_ADDA_weight/encoder" + prev_save + ".pt")
-          os.remove("0119_ADDA_weight/classifier" + prev_save + ".pt")
-        prev_save = "_" + str(epoch+1) 
+      # if valid_loss_class < valid_loss_min:
+      #   ### Delete previously saved model checkpoint ###
+      #   if prev_save:
+      #     os.remove("0119_ADDA_weight/encoder" + prev_save + ".pt")
+      #     os.remove("0119_ADDA_weight/classifier" + prev_save + ".pt")
+      #   prev_save = "_" + str(epoch+1) 
 
-        ### Save the new (best) model checkpoints ###
-        torch.save(encoder.state_dict(), "0119_ADDA_weight/encoder" + prev_save + ".pt")
-        torch.save(classifier.state_dict(), "0119_ADDA_weight/classifier" + prev_save + ".pt")
-        valid_loss_min = valid_loss_class
+      #   ### Save the new (best) model checkpoints ###
+      #   torch.save(encoder.state_dict(), "0119_ADDA_weight/encoder" + prev_save + ".pt")
+      #   torch.save(classifier.state_dict(), "0119_ADDA_weight/classifier" + prev_save + ".pt")
+      #   valid_loss_min = valid_loss_class
       ### Regularly save model checkpoints every [save_step] epochs ###
-      if ((epoch + 1) % save_step == 0):
-        torch.save(encoder.state_dict(), "0119_ADDA_weight/ADDA-encoder-{}.pt".format(epoch + 1))
-        torch.save(classifier.state_dict(), "0119_ADDA_weight/ADDA-classifier-{}.pt".format(epoch + 1))
+      # if ((epoch + 1) % save_step == 0):
+        
 
-    return encoder, classifier, classification_losses_E, domain_confusion_losses_E, losses_D, accs_D
+
+      with torch.no_grad():
+        for im ,target in wm811_valid_dataloader:
+            im,target = im.to(device), target.to(device)
+            output = encoder(im)
+            output = torch.flatten(output, 1)
+            output = classifier(output)
+            # print('output:' ,output)
+            target_valid_loss += criterion_cls(output, target)
+
+
+        if (accThisEpoch)> early_stop['ACC']:
+            early_stop['best_epoch'] = epoch+1
+            best_epoch = early_stop["best_epoch"]
+            early_stop['ACC'] = accThisEpoch
+            print(f'{epoch+1}: the new accuracy is {early_stop["ACC"]}')
+            early_stop['count'] = 0
+            torch.save(encoder.state_dict(), "0119_ADDA_weight/ADDA-encoder-{}.pt".format(epoch + 1))
+            torch.save(classifier.state_dict(), "0119_ADDA_weight/ADDA-classifier-{}.pt".format(epoch + 1))
+        else:
+            early_stop['count'] += 1
+            
+        if early_stop['count']==stop_num:
+            print(f'the best epoch is {early_stop["best_epoch"]}')
+            
+            break
+      target_valid_loss = 0.      
+    return encoder, classifier, classification_losses_E, domain_confusion_losses_E, losses_D, accs_D, best_epoch
   
 
   ################
@@ -524,10 +582,10 @@ if __name__ =="__main__":
       self.layer = nn.Sequential(
         nn.Linear(feature_dim,256),
         nn.ReLU(),
-        nn.Linear(256,512),
+        nn.Linear(256, 128),
         nn.ReLU(),
-        nn.Linear(512, 2),
-        nn.LogSoftmax()
+        nn.Linear(128, 2),
+        nn.LogSoftmax(dim=1)
       )       
     def forward(self, input):
       out = self.layer(input)
@@ -536,21 +594,6 @@ if __name__ =="__main__":
   #######################################################################################################################
   # model and encoder 
   #######################################################################################################################
-  resnet50 = models.resnet50(pretrained=False)
-  class ModifiedResNet50(nn.Module):
-      def __init__(self, in_channels):
-          super(ModifiedResNet50, self).__init__()
-          # 複製ResNet50的所有層
-          self.resnet50 = models.resnet50(pretrained=False)
-          
-          # 修改第一層的in_channels
-          self.resnet50.conv1 = nn.Conv2d(in_channels, 64, kernel_size=3, stride=1, padding=1, bias=False)
-          # self.resnet50.fc = nn.Linear(resnet50.fc.in_features, n_classes) 
-
-      def forward(self, x):
-          return self.resnet50(x)
-  
-
   #######
   #deformable
   ######
@@ -566,6 +609,7 @@ if __name__ =="__main__":
         self.conv_block_5= self.ConvBolck(self.conv_num* 8, self.conv_num* 4)
         
         self.global_avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.flatten = nn.Flatten()
         self.fc = nn.Linear(self.conv_num*4, out_class_dim)
         self.sigmoid = nn.Sigmoid()
     
@@ -583,50 +627,34 @@ if __name__ =="__main__":
         x_4= self.conv_block_4(x_3)
         x_5= self.conv_block_5(x_4)
         x_6 = self.global_avg_pool(x_5)
-        x_7 = torch.flatten(x_6, 1)
+        # x_7 = torch.flatten(x_6, 1)
+        x_7 = self.flatten(x_6)
         x_8 = self.fc(x_7)
         output = self.sigmoid(x_8)
         return output
 
+  def define_models(n_classes):#, pretrained_on="imagenet"):
+    model = Mymodel(in_channels=1,out_class_dim=9)
 
-
-
-
-  def define_models(n_classes, pretrained_on="imagenet"):
-    assert(pretrained_on in ["imagenet", "stylized_imagenet"]), 'pretrained_on must be set to one of "imagenet" or "stylized_imagenet"!'
-    # For encoder pre-trained on Stylized ImageNet
-    if pretrained_on=="stylized_imagenet":
-      classifier = nn.Linear(in_features=512, out_features=n_classes, bias=True)
-
-    # For encoder pre-trained on ImageNet
-    elif pretrained_on=="imagenet":
-      model = ModifiedResNet50(1)
-
-      classifier = nn.Linear(512, n_classes) 
+    classifier = nn.Sequential(*[ model.fc, model.sigmoid])
         # Define discriminator
-    encoder = nn.Sequential(*[model.resnet50.conv1, model.resnet50.bn1, model.resnet50.relu, model.resnet50.maxpool, model.resnet50.layer1, model.resnet50.layer2, model.resnet50.avgpool])#model.resnet50.layer1, model.resnet50.layer2, model.resnet50.layer3,
+    encoder = nn.Sequential(*[model.conv_block_1,model.conv_block_2, model.conv_block_3,model.conv_block_4,model.conv_block_5, model.global_avg_pool])#,model.flatten
     # encoder = nn.Sequential(*[model.features,model.avgpool])
-    discriminator = Discriminator(feature_dim=512)
+    discriminator = Discriminator(feature_dim=128)
     print('encoder:',encoder)
     print('Classifier:',classifier)
     print("discriminator",discriminator)
     return encoder, classifier, discriminator
     
-
-
-
-  
-    
-
-
   
   n_classes = len(dataloaders_multi_label['train'].dataset.classes)
   encoder, classifier, discriminator = define_models(n_classes)
 
   print("classes : {}".format(train_data_multi_label.classes))
-  encoder, classifier, classification_losses_E, domain_confusion_losses_E, losses_D, accs_D = train_adda(num_epochs = 5000,
-                                                                                                       lr = 3e-7,
-                                                                                                       save_step = 5,
+  encoder, classifier, classification_losses_E, domain_confusion_losses_E, losses_D, accs_D, best_epoch = train_adda(num_epochs = 100000,
+                                                                                                       lr = 5e-5,
+                                                                                                       stop_num = 300,
+                                                                                                       save_step =1,
                                                                                                        encoder = encoder, 
                                                                                                        classifier = classifier,
                                                                                                        discriminator = discriminator,
@@ -636,7 +664,52 @@ if __name__ =="__main__":
                                                                                                        src_test_dir = "38/test", 
                                                                                                        tgt_test_dir = "811/test",
                                                                                                        combined_dataloader = combined_dataloader,
-                                                                                                       alpha_CLS = 1,
-                                                                                                       alpha_DA = 0.3,
-                                                                                                       multi_label = True,
+                                                                                                       alpha_CLS = 2,
+                                                                                                       alpha_DA =1,
+                                                                                                       multi_label = False,
                                                                                                        test_threshold=0.2)
+
+  targetls, predls = [], []
+  defect_dict = {"Center": 0,
+                "Donut":  1,
+                "Edge-loc": 2,
+                "Edge-ring": 3,
+                "Loc":4,
+                "Near-full":5,
+                "Normal": 6,
+                "Random":7,
+                "Scratch":8}
+
+  defect_dict_inverse = {}
+  for i in range(0, len(defect_dict)):
+      key_name= list(defect_dict.keys())[i]
+      defect_dict_inverse[str(np.array(defect_dict[key_name]))]= key_name
+
+  classifier.load_state_dict(torch.load(f'C:/Users/MA201-Ultima/Desktop/thesis/0119_ADDA_weight/ADDA-classifier-{best_epoch}.pt')) #{best_epoch}
+  encoder.load_state_dict(torch.load(f'C:/Users/MA201-Ultima/Desktop/thesis/0119_ADDA_weight/ADDA-encoder-{best_epoch}.pt'))
+  classifier.to(device)
+  classifier.eval()
+  encoder.to(device)
+  encoder.eval()
+
+  with torch.no_grad():
+
+    for im ,target in wm811_test_dataloader:
+      # print(target.shape)
+      im,target = im.to(device), target.to(device)
+      output = encoder(im)
+      output = torch.flatten(output, 1)
+      output = classifier(output)
+      result = str(np.argmax(output[0].cpu().numpy()))
+      target = str(np.argmax(target[0].cpu().numpy()))
+
+      if result in defect_dict_inverse.keys():
+          predls.append(defect_dict_inverse[str(result)])
+      else : 
+          predls.append('Nonetype')
+      targetls.append(defect_dict_inverse[str(target)])
+      
+  result2 = PM.confussion_maxtrix(targetls,predls,classes)
+  print(result2)
+  result3 = PM.measurements(result2,classes)
+  print(result3)

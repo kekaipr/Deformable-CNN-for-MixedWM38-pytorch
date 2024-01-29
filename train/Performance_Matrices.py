@@ -22,7 +22,6 @@ def confussion_maxtrix(y_ture, y_pred, class_name):
     confussion_maxtrix_result = classification_correction_table
     return confussion_maxtrix_result   
     
-
 def measurements(confussion_maxtrix, class_name):
     class_name_list= class_name
     precision_list= []; recall_list= []; f1_list= []; accuracy_list= []
@@ -44,10 +43,10 @@ def measurements(confussion_maxtrix, class_name):
         accuracy_list.append(accuracy)
    
    #append average
-    precision_list.append(round(np.mean(precision_list[:-1]), 4))
-    recall_list.append(round(np.mean(recall_list[:-1]), 4))
-    f1_list.append(round(np.mean(f1_list[:-1]), 4))
-    accuracy_list.append(round(np.mean(accuracy_list[:-1]), 4))
+    precision_list.append(round(np.mean(precision_list[:]), 4))
+    recall_list.append(round(np.mean(recall_list[:]), 4))
+    f1_list.append(round(np.mean(f1_list[:]), 4))
+    accuracy_list.append(round(np.mean(accuracy_list[:]), 4))
         
     precision_list= np.array(precision_list); recall_list= np.array(recall_list); f1_list= np.array(f1_list)
     accuracy_list= np.array(accuracy_list)
